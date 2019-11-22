@@ -1,0 +1,633 @@
+---
+title: "Report on ethics survey"
+author: "Adrian Barnett"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+# version using SPSS data
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE, error=FALSE, comment = NA, prompt = FALSE, cache = FALSE, dpi=400)
+options(width=1000, scipen = 999) # Wide pages and no scientific numbers
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(stringr)
+library(naniar) # for missing data
+library(janitor)
+library(pander) # for tables
+library(summarytools) # for tables
+library(tables) # also for tables
+# global options for summary tools
+ st_options(plain.ascii = FALSE,       # This is very handy in all Rmd documents
+            style = "rmarkdown",        # This too
+            round.digits = 0, 
+            headings = FALSE, 
+            footnote = NA,             # Avoids footnotes which would clutter the results
+            subtitle.emphasis = FALSE  # This is a setting to experiment with - according to
+ ) 
+ 
+# get the data
+load('data/AnalysisReady.RData') # from 0_read_data.R
+
+# for summary tables
+summary.numbers = summary.comments = NULL
+```
+
+# What surveys were complete?
+
+There were `r nrow(data)` surveys completed in total.
+
+There were 8 different types of surveys with different combinations of the scenarios.
+The table below shows the number of responses for each survey type.
+
+```{r, results='asis'}
+freq(data$survey, cumul=FALSE, report.nas = FALSE)
+```
+
+# Combination of survey and scenario
+
+The table below shows the combinations of surveys and scenarios, where a `1` means that survey included that scenario and a `0` means it did not.
+
+```{r combinations}
+to.table = select(data, 'survey', starts_with('scenario'), -ends_with('_reasons')) %>%
+  gather(key='scenario', value='answer', -survey) %>% # wide to long
+  mutate(
+    answer = ifelse(is.na(answer), '', answer), # replace NAs
+    any.answer = answer!='',
+    scenario = str_remove_all(string=scenario, pattern = 'scenario_|\\_r[0-9]|[0-9]')) %>% # make text nicer
+  group_by(survey, scenario) %>%
+  unique() %>%
+  summarise(answered = max(any.answer)) %>%
+  ungroup()
+tabular(Heading('Scenario')*factor(scenario) ~ Heading('')*factor(survey) * Heading('')*answered * Heading('')*sum, data=to.table)
+```
+
+* interview = interview with patients, lay persons or carers
+* linked = linked data
+* n = n-of-1 studies as part of regular, clinical practice
+* notrt = no treatment/no behavioural rules imposed
+* qa = quality assurance or audit project 
+* staff = professional staff providing opinion/views in their area of expertise
+* surplus = surplus samples or tissues during routine collection in clinical practice
+* survey = survey or questionnaire of patients, lay persons, or care providers
+
+# What date did people start the survey?
+
+```{r start.date}
+date.plot = ggplot(data=data, aes(x=start_date))+
+  geom_histogram()+
+  theme_bw()+
+  xlab('Date')+
+  ylab('Frequency')
+date.plot
+# summary stats
+date.median = median(data$start_date)
+date.q1 = quantile(as.numeric(data$start_date), 0.25)
+date.q1 = as.Date(date.q1, origin = '1970-01-01')
+date.q3 = quantile(as.numeric(data$start_date), 0.75)
+date.q3 = as.Date(date.q3, origin = '1970-01-01')
+```
+
+The median time was `r format(date.median, '%d-%b-%Y')` with an inter-quartile range from `r format(date.q1, '%d-%b-%Y')` to `r format(date.q3, '%d-%b-%Y')`.
+
+# How long did people take to complete the survey?
+
+```{r}
+time.plot = ggplot(data=data, aes(x=time_taken))+
+  geom_histogram()+
+  theme_bw()+
+  xlab('Time, minutes')+
+  ylab('Frequency')
+time.plot
+# summary stats
+time.median = round(median(data$time_taken))
+time.q1 = round(quantile(data$time_taken, 0.25))
+time.q3 = round(quantile(data$time_taken, 0.75))
+people.hour = sum(data$time_taken > 60) # people taking over an hour
+```
+
+The distribution of time taken above shows that most people completed the survey quickly, whereas a few had a long break between starting and finishing.
+
+The median time was `r time.median` minutes, with an interquartile range of `r time.q1` to `r time.q3` minutes. There were `r people.hour` respondents who took over an hour to complete the survey, which is `r round(100*people.hour/nrow(data))`%. The longest time was `r round(max(data$time_taken)/60)` hours.
+
+# Item missing data
+
+Here we examine the patterns in missing data. We do this by questionnaire for the scenarios, because they varied by questionnaire.
+
+## Missing data in variables common to all surveys
+
+```{r item.missing}
+miss = miss_var_summary(select(data, respondent, changed, abandon))
+pander(miss, digits=0, style='simple')
+```
+
+The overall sample size for this table is `r nrow(data)`.
+
+## Missing scenarios in surveys A and H1
+
+```{r item.missing.AH1}
+to.miss = filter(data, survey %in% c('A','H1')) %>%
+  select(scenario_interview_r1, scenario_interview_r2, scenario_linked, scenario_qa1, scenario_qa2, scenario_staff1, scenario_staff2, scenario_staff3) %>%
+  replace_with_na_all(condition= ~.=='')
+miss = miss_var_summary(to.miss)
+pander(miss, digits=0, style='simple')
+```
+
+The overall sample size for this table is `r nrow(to.miss)`.
+
+## Missing scenarios in surveys B and H2
+
+```{r item.missing.BH2}
+to.miss = filter(data, survey %in% c('B','H2')) %>%
+  select(scenario_notrt, scenario_staff1, scenario_staff2, scenario_staff3,  scenario_survey1, scenario_survey2, scenario_surplus) %>%
+  replace_with_na_all(condition= ~.=='')
+miss = miss_var_summary(to.miss)
+pander(miss, digits=0, style='simple')
+```
+
+The overall sample size for this table is `r nrow(to.miss)`.
+
+## Missing scenarios in surveys C and H3
+
+```{r item.missing.CH3}
+to.miss = filter(data, survey %in% c('C','H3')) %>%
+  select(scenario_n1, scenario_qa1, scenario_qa2,  scenario_survey1, scenario_survey2, scenario_linked) %>%
+  replace_with_na_all(condition= ~.=='')
+miss = miss_var_summary(to.miss)
+pander(miss, digits=0, style='simple')
+```
+
+The overall sample size for this table is `r nrow(to.miss)`.
+
+## Missing scenarios in surveys D and H4
+
+```{r item.missing.DH4}
+to.miss = filter(data, survey %in% c('D','H4')) %>%
+  select(scenario_notrt, scenario_n1, scenario_interview_r1, scenario_interview_r2, scenario_surplus) %>%
+  replace_with_na_all(condition= ~.=='')
+miss = miss_var_summary(to.miss)
+pander(miss, digits=0, style='simple')
+```
+
+The overall sample size for this table is `r nrow(to.miss)`.
+
+# Which of these options best describes you? 
+
+```{r, results='asis'}
+freq(data$respondent, cumul=FALSE, report.nas = TRUE)
+```
+
+* HREC = Member of an Australian Human Research Ethics Committee (former or current member) 
+* Researcher = Human health/medical researcher (former or current) working at an Australian institution (e.g. a university, local health district, research institute, etc.)
+* NA = missing.
+
+## Cross-tabulation of respondent by survey
+
+```{r, results='asis'}
+ctable(data$survey, data$respondent, prop = "r", useNA = 'no', round.digits = 0, dnn=c('Survey','Respondent'), style='rmarkdown')
+```
+
+Survey versions A, B, C, D were sent out to researchers, and versions H1, H2, H3, H4 were sent out to HRECs. 
+
+# Question 1: I have changed a project from what I had originally envisioned 
+
+"I have changed a project from what I had originally envisioned to a different project (e.g. to use different methods, study population) because I was concerned about applying for and obtaining ethics approval (e.g., length of time required to obtain approval, complexity, expense, incompatibility with funder timelines, etc.)"
+
+```{r table.q1, results='asis'}
+freq(data$changed, cumul=FALSE, report.nas = TRUE)
+```
+
+* NA = missing.
+
+### Table excluding not applicables and missing (changed a project)
+
+```{r table.q1.without.na, results='asis'}
+no.na = filter(data, changed != "This question does not apply to me") %>%
+  mutate(changed = forcats::fct_drop(changed))
+freq(no.na$changed, cumul=FALSE, report.nas = FALSE)
+```
+
+### Numbers providing optional text (changed a project)
+
+```{r, q1.extra.text, results='asis'}
+data = mutate(data, extra = as.numeric(changed_text != ''),
+              extra = factor(extra, levels=c(0,1), labels=c("No comment",'With comment')))
+freq(data$extra, cumul=FALSE, report.nas = FALSE)
+```
+
+# Question 2: I abandoned a project I had intended to conduct 
+
+"I abandoned a project I had intended to conduct because I was concerned about applying for and obtaining ethics approval (e.g., length of time required to obtain approval, complexity, expense, incompatibility with funder timelines, etc.)"
+
+
+```{r table.q2, results='asis'}
+freq(data$abandon, cumul=FALSE, report.nas = TRUE)
+```
+
+NA is missing.
+
+### Table excluding not applicables and missing (abandoned a project)
+
+```{r table.q2.without.na, results='asis'}
+no.na = filter(data, abandon != "This question does not apply to me") %>%
+  mutate(abandon = forcats::fct_drop(abandon))
+freq(no.na$abandon, cumul=FALSE, report.nas = FALSE)
+```
+
+### Numbers providing optional text (abandoned a project)
+
+```{r, q2.extra.text, results='asis'}
+data = mutate(data, extra = as.numeric(abandon_text != ''),
+              extra = factor(extra, levels=c(0,1), labels=c("No comment",'With comment')))
+freq(data$extra, cumul=FALSE, report.nas = FALSE)
+```
+
+### Cross-tabulation by respondents (abandoned a project)
+
+```{r, results='asis'}
+ctable(no.na$respondent, no.na$abandon, prop = "r", useNA = 'no', round.digits = 0, dnn=c('Respondent','Answer'), style='rmarkdown')
+```
+
+
+# Scenario: Linked data sets ('big data' population health research)
+
+"A study involving the use of linked, de-identified administrative data sets (e.g. registries, administrative data, electronic health records). For example, consider a study of the cardiovascular safety of non-steroidal anti-inflammatory drugs (NSAIDs e.g. Naprosyn, Nurofen). This study involved a de-identified (no names, no full date of birth, no postcode) data set of people over 75 years of age who used, or did not use, NSAIDs. The prescription records were linked to hospitalisation diagnoses and deaths (with causes) and the rates of fatal and non-fatal heart attacks were compared in users and non-users of the drugs. The data centre holding the original data set has assessed the proposed project and analyses for privacy impact, feasibility of the study with the available data, and adequacy of data set creation and analysis plans, and has approved the project. The de-identified linked data were held in a secure facility. Individual level data could not be seen on screen. Data were located in a secure environment that allowed analysis but did NOT allow download of the data and did NOT allow download of the analyses. The analyses were checked by data-centre staff for privacy risk before release to the researchers."
+
+```{r table.scenario.linked, results='asis'}
+to.table = filter(data, !is.na(scenario_linked)) %>% # exclude missings (from other surveys)
+  mutate(scenario_linked = ifelse(scenario_linked=='', NA, scenario_linked)) # now make missing answers to NA
+freq(to.table$scenario_linked, cumul=FALSE, report.nas = TRUE)
+# summary for later graph/table
+numbers = group_by(to.table, scenario_linked) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='linked') %>%
+  rename('answer' = 'scenario_linked')
+summary.numbers = bind_rows(summary.numbers, numbers)
+```
+
+### Numbers providing optional text (Scenario: Linked data sets)
+
+```{r, linked.extra.text, results='asis'}
+to.table = filter(data, !is.na(scenario_linked)) %>% # exclude missings (from other surveys)
+  mutate(extra = as.numeric(scenario_linked_reasons != ''),
+         extra = factor(extra, levels=c(0,1), labels=c("No comment",'With comment')))
+freq(to.table$extra, cumul=FALSE, report.nas = FALSE)
+# summary for later graph/table
+numbers = group_by(to.table, extra) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='linked') 
+summary.comments = bind_rows(summary.comments, numbers)
+```
+
+# Scenario: Interview with patients, lay persons or carers (non-professional)
+
+"An interview (one-on-one or in a group, such as a focus group) of patients, lay persons, or care providers. Consent has been obtained from participants by the research team. The interview does NOT include questions about highly sensitive areas (e.g. suicide, mental illness, HIV status, recreational drug use), AND meets one of the following criteria:
+
+## Criteria 1 (interviews)
+
+"Identity of interviewed person(s) is known to the research team but not to the interviewer, and identity cannot be readily identified by the interviewer."
+
+```{r table.scenario.interview.r1, results='asis'}
+to.table = filter(data, !is.na(scenario_interview_r1)) %>% # exclude missings (from other surveys)
+  mutate(scenario_interview_r1 = ifelse(scenario_interview_r1=='', NA, scenario_interview_r1)) # now make missing answers to NA
+freq(to.table$scenario_interview_r1, cumul=FALSE, report.nas = TRUE)
+# summary for later graph/table
+numbers = group_by(to.table, scenario_interview_r1) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='interview1') %>%
+  rename('answer' = 'scenario_interview_r1')
+summary.numbers = bind_rows(summary.numbers, numbers)
+```
+
+## Criteria 2 (interviews)
+
+"Identity of interviewed person(s) is known to the research team including the interviewer, but is not disclosed to anyone else."
+
+```{r table.scenario.interview.r2, results='asis'}
+to.table = filter(data, !is.na(scenario_interview_r2)) %>% # exclude missings (from other surveys)
+  mutate(scenario_interview_r2 = ifelse(scenario_interview_r2=='', NA, scenario_interview_r2)) # now make missing answers to NA
+freq(to.table$scenario_interview_r2, cumul=FALSE, report.nas = TRUE)
+# summary for later graph/table
+numbers = group_by(to.table, scenario_interview_r2) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='interview2') %>%
+  rename('answer' = 'scenario_interview_r2')
+summary.numbers = bind_rows(summary.numbers, numbers)
+```
+
+### Numbers providing optional text (interviews)
+
+```{r, interviews.extra.text, results='asis'}
+to.table = filter(data, !is.na(scenario_interview_r1)) %>% # exclude missings (from other surveys)
+  mutate(extra = as.numeric(scenario_interview_reasons != ''),
+         extra = factor(extra, levels=c(0,1), labels=c("No comment",'With comment')))
+freq(to.table$extra, cumul=FALSE, report.nas = FALSE)
+# summary for later graph/table
+numbers = group_by(to.table, extra) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='interviews') 
+summary.comments = bind_rows(summary.comments, numbers)
+```
+
+# Scenario: Quality assurance or audit project
+
+"To promote good clinical care, audit projects are done to produce information about whether care standards comply with national standards and practice guidelines. Those conducting the audit will report the findings to inform planned improvements locally, and they may also disseminate their findings through publication in a journal."
+
+## Example A (quality assurance): 
+
+"An audit and feedback project to reduce inappropriate prescribing, e.g., a chart audit of sedative-hypnotics prescribed to older hospitalised patients."
+
+```{r table.scenario.qa1, results='asis'}
+to.table = filter(data, !is.na(scenario_qa1)) %>% # exclude missings (from other surveys)
+  mutate(scenario_qa1 = ifelse(scenario_qa1=='', NA, scenario_qa1)) # now make missing answers to NA
+freq(to.table$scenario_qa1, cumul=FALSE, report.nas = TRUE)
+# summary for later graph/table
+numbers = group_by(to.table, scenario_qa1) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='qa1') %>%
+  rename('answer' = 'scenario_qa1')
+summary.numbers = bind_rows(summary.numbers, numbers)
+```
+
+## Example B (quality assurance): 
+
+"Evaluation, pre- and post-simulation training, of door-to-needle time (time between arrival to emergency dept. and administration of treatment) of patients with acute stroke, with the aim of improving treatment initiation."
+
+```{r table.scenario.qa2, results='asis'}
+to.table = filter(data, !is.na(scenario_qa2)) %>% # exclude missings (from other surveys)
+  mutate(scenario_qa2 = ifelse(scenario_qa2=='', NA, scenario_qa2)) # now make missing answers to NA
+freq(to.table$scenario_qa2, cumul=FALSE, report.nas = TRUE)
+# summary for later graph/table
+numbers = group_by(to.table, scenario_qa2) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='qa2') %>%
+  rename('answer' = 'scenario_qa2')
+summary.numbers = bind_rows(summary.numbers, numbers)
+```
+
+## Example C (quality assurance): 
+
+"Use of direct observation to examine nursing care for sick newborns, to identify missed elements of care, such as phototherapy sessions."
+
+```{r table.scenario.qa3, results='asis'}
+to.table = filter(data, !is.na(scenario_qa3)) %>% # exclude missings (from other surveys)
+  mutate(scenario_qa3 = ifelse(scenario_qa3=='', NA, scenario_qa3)) # now make missing answers to NA
+freq(to.table$scenario_qa3, cumul=FALSE, report.nas = TRUE)
+# summary for later graph/table
+numbers = group_by(to.table, scenario_qa3) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='qa3') %>%
+  rename('answer' = 'scenario_qa3')
+summary.numbers = bind_rows(summary.numbers, numbers)
+```
+
+### Numbers providing optional text (quality assurance)
+
+```{r, qa.extra.text, results='asis'}
+to.table = filter(data, !is.na(scenario_qa1)) %>% # exclude missings (from other surveys)
+  mutate(extra = as.numeric(scenario_qa_reasons != ''),
+         extra = factor(extra, levels=c(0,1), labels=c("No comment",'With comment')))
+freq(to.table$extra, cumul=FALSE, report.nas = FALSE)
+# summary for later graph/table
+numbers = group_by(to.table, extra) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='quality assurance') 
+summary.comments = bind_rows(summary.comments, numbers)
+```
+
+# Scenario: Professional staff providing opinion/views in their area of expertise
+
+"Professional staff (e.g. hospital staff, researchers) are asked 'as volunteers' about their views on a topic in their areas of expertise or professional practice, through either a face to face interview or written/online survey."
+
+## Example A (professional staff)
+
+"A survey of general practitioners to prioritise a list of systematic review topics for a Cochrane group."
+
+```{r table.scenario.staff1, results='asis'}
+to.table = filter(data, !is.na(scenario_staff1)) %>% # exclude missings (from other surveys)
+  mutate(scenario_staff1 = ifelse(scenario_staff1=='', NA, scenario_staff1)) # now make missing answers to NA
+freq(to.table$scenario_staff1, cumul=FALSE, report.nas = TRUE)
+# summary for later graph/table
+numbers = group_by(to.table, scenario_staff1) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='staff1') %>%
+  rename('answer' = 'scenario_staff1')
+summary.numbers = bind_rows(summary.numbers, numbers)
+```
+
+## Example B (professional staff)
+
+"A survey asking systematic reviewers to report on the strengths and weaknesses of systematic review software."
+
+```{r table.scenario.staff2, results='asis'}
+to.table = filter(data, !is.na(scenario_staff2)) %>% # exclude missings (from other surveys)
+  mutate(scenario_staff2 = ifelse(scenario_staff2=='', NA, scenario_staff2)) # now make missing answers to NA
+freq(to.table$scenario_staff2, cumul=FALSE, report.nas = TRUE)
+# summary for later graph/table
+numbers = group_by(to.table, scenario_staff2) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='staff2') %>%
+  rename('answer' = 'scenario_staff2')
+summary.numbers = bind_rows(summary.numbers, numbers)
+```
+
+## Example C (professional staff) 
+
+"An interview of all physiotherapists in a hospital on barriers and facilitators they have experienced in implementing a specific therapy for patients."
+
+```{r table.scenario.staff3, results='asis'}
+to.table = filter(data, !is.na(scenario_staff3)) %>% # exclude missings (from other surveys)
+  mutate(scenario_staff3 = ifelse(scenario_staff3=='', NA, scenario_staff3)) # now make missing answers to NA
+freq(to.table$scenario_staff3, cumul=FALSE, report.nas = TRUE)
+# summary for later graph/table
+numbers = group_by(to.table, scenario_staff3) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='staff3') %>%
+  rename('answer' = 'scenario_staff3')
+summary.numbers = bind_rows(summary.numbers, numbers)
+```
+
+### Numbers providing optional text (professional staff)
+
+```{r, staff.extra.text, results='asis'}
+to.table = filter(data, !is.na(scenario_staff1)) %>% # exclude missings (from other surveys)
+  mutate(extra = as.numeric(scenario_staff_reasons != ''),
+         extra = factor(extra, levels=c(0,1), labels=c("No comment",'With comment')))
+freq(to.table$extra, cumul=FALSE, report.nas = FALSE)
+# summary for later graph/table
+numbers = group_by(to.table, extra) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='professional staff') 
+summary.comments = bind_rows(summary.comments, numbers)
+```
+
+# Scenario: No treatment/no behavioural rules imposed
+
+"Study of any design (cohort, randomised control trial, other designs) that does not require participants to receive any treatment that is not already in routine use, and does not require participants to follow any behavioural rules that are not already applied in routine care. For example, consider a study involving hospitalised patients. The hospital already uses two types of mattress, with some beds using mattress A, and other beds using mattress B. There is uncertainty about whether one of the mattresses is better at preventing bed sores than the other. To address this uncertainty, patients will be randomly allocated either to mattress A or to mattress B, and the incidence of bed sores will be compared in the two groups."
+
+```{r table.scenario.notrt, results='asis'}
+to.table = filter(data, !is.na(scenario_notrt)) %>% # exclude missings (from other surveys)
+  mutate(scenario_notrt = ifelse(scenario_notrt=='', NA, scenario_notrt)) # now make missing answers to NA
+freq(to.table$scenario_notrt, cumul=FALSE, report.nas = TRUE)
+# summary for later graph/table
+numbers = group_by(to.table, scenario_notrt) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='no treatment') %>%
+  rename('answer' = 'scenario_notrt')
+summary.numbers = bind_rows(summary.numbers, numbers)
+```
+
+### Numbers providing optional text (no treatment)
+
+```{r, notrt.extra.text, results='asis'}
+to.table = filter(data, !is.na(scenario_notrt)) %>% # exclude missings (from other surveys)
+  mutate(extra = as.numeric(scenario_notrt_reasons != ''),
+         extra = factor(extra, levels=c(0,1), labels=c("No comment",'With comment')))
+freq(to.table$extra, cumul=FALSE, report.nas = FALSE)
+# summary for later graph/table
+numbers = group_by(to.table, extra) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='no treatment') 
+summary.comments = bind_rows(summary.comments, numbers)
+```
+
+# Scenario: Survey/questionnaire of patients, lay persons or carer (non-professional)
+
+"A survey or questionnaire of patients, lay persons, or care providers, which does NOT include questions about highly sensitive areas (e.g. suicide, mental illness, HIV status, recreational drug use), AND meets one the following criteria:"
+
+## Criteria 1 (surveys)
+
+"Identity of respondents cannot be readily identified (i.e. the survey or questionnaire is anonymous)."
+
+```{r table.scenario.survey1, results='asis'}
+to.table = filter(data, !is.na(scenario_survey1)) %>% # exclude missings (from other surveys)
+  mutate(scenario_survey1 = ifelse(scenario_survey1=='', NA, scenario_notrt)) # now make missing answers to NA
+freq(to.table$scenario_survey1, cumul=FALSE, report.nas = TRUE)
+# summary for later graph/table
+numbers = group_by(to.table, scenario_survey1) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='survey 1') %>%
+  rename('answer' = 'scenario_survey1')
+summary.numbers = bind_rows(summary.numbers, numbers)
+```
+
+## Criteria 2 (surveys)
+
+"Identity of respondents is known only to the research team and is not disclosed outside of the research team."
+
+```{r table.scenario.survey2, results='asis'}
+to.table = filter(data, !is.na(scenario_survey2)) %>% # exclude missings (from other surveys)
+  mutate(scenario_survey2 = ifelse(scenario_survey2=='', NA, scenario_notrt)) # now make missing answers to NA
+freq(to.table$scenario_survey2, cumul=FALSE, report.nas = TRUE)
+# summary for later graph/table
+numbers = group_by(to.table, scenario_survey2) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='survey 2') %>%
+  rename('answer' = 'scenario_survey2')
+summary.numbers = bind_rows(summary.numbers, numbers)
+```
+
+### Numbers providing optional text (surveys)
+
+```{r, surveys.extra.text, results='asis'}
+to.table = filter(data, !is.na(scenario_survey1)) %>% # exclude missings (from other surveys)
+  mutate(extra = as.numeric(scenario_survey_reasons != ''),
+         extra = factor(extra, levels=c(0,1), labels=c("No comment",'With comment')))
+freq(to.table$extra, cumul=FALSE, report.nas = FALSE)
+# summary for later graph/table
+numbers = group_by(to.table, extra) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='surveys') 
+summary.comments = bind_rows(summary.comments, numbers)
+```
+
+# Scenario: Surplus samples or tissues during routine collection in clinical practice
+
+"Research may use surplus (extra) tissue or samples obtained from people during routine medical procedures. For example, extra blood could be drawn at the time of medically required or routine sampling. Tissue not required for diagnosis or testing could be collected during routine clinical procedures requiring tissue sampling."
+
+
+```{r table.scenario.surplus, results='asis'}
+to.table = filter(data, !is.na(scenario_surplus)) %>% # exclude missings (from other surveys)
+  mutate(scenario_surplus = ifelse(scenario_surplus=='', NA, scenario_notrt)) # now make missing answers to NA
+freq(to.table$scenario_surplus, cumul=FALSE, report.nas = TRUE)
+# summary for later graph/table
+numbers = group_by(to.table, scenario_surplus) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='surplus') %>%
+  rename('answer' = 'scenario_surplus')
+summary.numbers = bind_rows(summary.numbers, numbers)
+```
+
+
+### Numbers providing optional text (surplus)
+
+```{r, surplus.extra.text, results='asis'}
+to.table = filter(data, !is.na(scenario_surplus)) %>% # exclude missings (from other surveys)
+  mutate(extra = as.numeric(scenario_surplus_reasons != ''),
+         extra = factor(extra, levels=c(0,1), labels=c("No comment",'With comment')))
+freq(to.table$extra, cumul=FALSE, report.nas = FALSE)
+# summary for later graph/table
+numbers = group_by(to.table, extra) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='surplus') 
+summary.comments = bind_rows(summary.comments, numbers)
+```
+
+# Other research types/scenarios that could be exempted
+
+"OPTIONAL: Do you think there are other type(s) of human health/medical research that could ALSO be considered for exemption from a requirement to undergo ethics review in Australia?" 
+
+```{r, other.extra.text, results='asis'}
+data = mutate(data,
+         extra = as.numeric(open_ended != ''),
+         extra = factor(extra, levels=c(0,1), labels=c("No comment",'With comment')))
+freq(data$extra, cumul=FALSE, report.nas = FALSE)
+# summary for later graph/table
+numbers = group_by(data, extra) %>%
+  summarise(count = n()) %>%
+  mutate(scenario='other types') 
+summary.comments = bind_rows(summary.comments, numbers)
+```
+
+# Summary plot of scenario results
+
+```{r summary.plot, fig.width=11, fig.height=7}
+# to do: order by some result
+colours = c('grey','#e8b0b9','#b8d7ad')
+summary.percents = group_by(summary.numbers, scenario) %>%
+  mutate(
+     answer = ifelse(is.na(answer), 'missing', answer),
+     N = sum(count),
+     percent = 100*count/N) 
+splot = ggplot(data=summary.percents, aes(x=factor(scenario), y=percent, fill=factor(answer)))+
+  geom_bar(stat ='identity')+
+  xlab('')+
+  ylab('Percent')+
+  scale_fill_manual(NULL, values=colours)+
+  theme_bw()+
+  coord_flip()+
+  theme(legend.position = 'top', text=element_text(size=18))
+splot
+```
+
+# Summary table of the number of comments
+
+The table below shows the number and percent of comments per scenario. The rows are ordered from the most to least commented.
+
+```{r summary.table}
+to.table = tidyr::spread(summary.comments, extra, count) %>%
+  mutate(total = `No comment` + `With comment`,
+         perc1 = round(100*`No comment`/total), 
+         perc2 = 100 - perc1, 
+         `No comment` = paste(`No comment`, ' (', perc1, ')', sep=''),
+         `With comment` = paste(`With comment`, ' (', perc2, ')', sep='')
+         ) %>%
+  arrange(-perc2) %>% # rows by most comments
+  select(-perc1, -perc2) 
+pander(to.table, style='simple')
+```
+
+```{r to do}
+# Look at patterns, who said no to everything!
+```
