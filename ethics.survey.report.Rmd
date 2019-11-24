@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE, error=FALSE, c
 options(width=1000, scipen = 999) # Wide pages and no scientific numbers
 library(ggplot2)
 library(tidyr)
+library(broom) # for regression tables
 library(dplyr)
 library(stringr)
 library(naniar) # for missing data
@@ -628,6 +629,45 @@ to.table = tidyr::spread(summary.comments, extra, count) %>%
 pander(to.table, style='simple')
 ```
 
-```{r to do}
-# Look at patterns, who said no to everything!
+# Do the scenario responses vary by group (researcher, HREC or both)
+
+Each respondent was asked about four scenarios and whether they did or did not require ethics review. Here we examine if there was a difference between the three respondent groups.
+
+## Boxplot
+
+```{r numbers.should}
+# switch to long and count numbers per respondent
+counts = dplyr::select(data, 'id', 'respondent', starts_with('scenario'), -ends_with('reasons')) %>%
+  gather(key='scenario', value='response', -id, -respondent) %>%
+  filter(response !='', !is.na(respondent)) %>%
+  mutate(answer = str_detect(string=response, pattern='Should NOT')) %>%
+  group_by(id, respondent) %>%
+  summarise(N=n(), not = sum(answer), p=not/N) %>%
+  ungroup()
+box = ggplot(data=counts, aes(x=factor(respondent), y=p)) +
+  geom_boxplot()+
+  xlab('')+
+  ylab('Proportion answered as NOT requiring ethics review')+
+  theme_bw()
+box
 ```
+
+## Regression model
+
+We use a Poisson regression model to examine the differences between the three groups (researchers, HRECs, both). We model the probability of answering that a scenario should not require ethics review. The model examines the count of "should not" responses with the overall number of responses as an offset. The number of scenarios answered per respondent varied between `r min(counts$N)` and `r max(counts$N)` with a median of `r median(counts$N)`.
+
+```{r poisson}
+model = glm(not ~ factor(respondent), offset=log(N), family=poisson, data=counts)
+tab = tidy(model, exponentiate=TRUE, conf.int=TRUE) %>%
+  filter(term != '(Intercept)') %>% # do not need intercept
+  mutate(
+    term = str_remove(string=term, pattern='factor\\(respondent\\)'),
+    Mean = round(estimate, 2),
+    CI = paste(round(conf.low, 2), ' to ', round(conf.high, 2), sep=''),
+    p.value = format.pval(p.value, digits=4, eps=0.001)) %>%
+  select(term, Mean, CI, p.value) %>%
+  rename('respondent' = 'term')
+pander(tab, style='simple')
+```
+
+Researchers were 36% more likely than HRECs to answer that a scenario should not require ethics review. There was no clear difference between HRECs and respondents who were both researchers and HRECs. HRECs were the reference category.
